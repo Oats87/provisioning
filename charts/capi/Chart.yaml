@@ -1,0 +1,9 @@
+apiVersion: v1
+name: rancher-provisioning-capi
+description: capi-controller-manager compatible with Rancher Provisioning
+home: https://github.com/rancher/provisioning/blob/main/charts/capi/
+sources:
+  - "https://github.com/rancher/provisioning/blob/main/charts/capi/"
+version: 0.0.1
+appVersion: v1.4.4
+kubeVersion: '>= 1.23.0-0'
