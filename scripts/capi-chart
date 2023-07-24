@@ -1,0 +1,120 @@
+#!/bin/sh
+
+# Must also set the corresponding versions in Chart.yaml and values.yaml
+CAPI_VERSION=v1.4.4
+
+# Script requires yq >= 4.x
+if ! [ -x "$(command -v yq)" ]; then
+  echo "yq is required"
+  exit 1
+fi
+
+cd $(dirname $0)/..
+
+CAPI_CHART_FOLDER=charts/capi
+CAPI_CHART_SOURCE_FOLDER=charts-source/capi
+CAPI_TEMPLATES_FOLDER=${CAPI_CHART_FOLDER}/templates
+
+rm -rf ${CAPI_CHART_FOLDER}
+
+mkdir -p ${CAPI_TEMPLATES_FOLDER}
+
+cp -rf ${CAPI_CHART_SOURCE_FOLDER}/* ${CAPI_CHART_FOLDER}
+
+RANCHER_MANIFESTS_FOLDER=$(pwd)/dist/rancher-capi-manifests
+
+# This script is how charts/capi/templates is generated.
+# It takes the statically rendered core components and generates the corresponding chart that installs the capi-controller-manager
+
+pushd ${CAPI_TEMPLATES_FOLDER}
+
+curl -L https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_VERSION}/core-components.yaml | yq -N -s '. | .kind + "-" + .metadata.name | downcase | sub("\.", "-") + ".yaml"'
+
+mkdir -p ${RANCHER_MANIFESTS_FOLDER}
+
+MWC=mutatingwebhookconfiguration-capi-mutating-webhook-configuration.yaml
+VWC=validatingwebhookconfiguration-capi-validating-webhook-configuration.yaml
+
+mv customresourcedefinition-*.yaml ${RANCHER_MANIFESTS_FOLDER}
+mv ${MWC} ${RANCHER_MANIFESTS_FOLDER}
+mv ${VWC} ${RANCHER_MANIFESTS_FOLDER}
+
+yq -i 'del(.metadata.annotations)' ${RANCHER_MANIFESTS_FOLDER}/${MWC}
+yq -i 'del(.metadata.labels)' ${RANCHER_MANIFESTS_FOLDER}/${MWC}
+yq -i 'del(.metadata.name)' ${RANCHER_MANIFESTS_FOLDER}/${MWC}
+yq -i '.metadata.creationTimestamp = null' ${RANCHER_MANIFESTS_FOLDER}/${MWC}
+yq -i '.metadata.name = "mutating-webhook-configuration"' ${RANCHER_MANIFESTS_FOLDER}/${MWC}
+
+yq -i 'del(.metadata.annotations)' ${RANCHER_MANIFESTS_FOLDER}/${VWC}
+yq -i 'del(.metadata.labels)' ${RANCHER_MANIFESTS_FOLDER}/${VWC}
+yq -i 'del(.metadata.name)' ${RANCHER_MANIFESTS_FOLDER}/${VWC}
+yq -i '.metadata.creationTimestamp = null' ${RANCHER_MANIFESTS_FOLDER}/${VWC}
+yq -i '.metadata.name = "validating-webhook-configuration"' ${RANCHER_MANIFESTS_FOLDER}/${VWC}
+
+touch ${RANCHER_MANIFESTS_FOLDER}/capi-crds.yaml
+touch ${RANCHER_MANIFESTS_FOLDER}/capi-webhooks.yaml
+echo "---" >> ${RANCHER_MANIFESTS_FOLDER}/capi-webhooks.yaml
+cat ${RANCHER_MANIFESTS_FOLDER}/${MWC} >> ${RANCHER_MANIFESTS_FOLDER}/capi-webhooks.yaml
+echo "---" >> ${RANCHER_MANIFESTS_FOLDER}/capi-webhooks.yaml
+cat ${RANCHER_MANIFESTS_FOLDER}/${VWC} >> ${RANCHER_MANIFESTS_FOLDER}/capi-webhooks.yaml
+
+rm -f ${RANCHER_MANIFESTS_FOLDER}/${MWC} ${RANCHER_MANIFESTS_FOLDER}/${VWC}
+
+for i in $(ls ${RANCHER_MANIFESTS_FOLDER}/customresourcedefinition-*.yaml); do
+  echo "---" >> ${RANCHER_MANIFESTS_FOLDER}/capi-crds.yaml
+  cat $i | yq 'del(.metadata.annotations["cert-manager.io/inject-ca-from"])' | yq 'del(.spec.conversion.webhook.clientConfig.caBundle)' >> ${RANCHER_MANIFESTS_FOLDER}/capi-crds.yaml
+done
+sed -i 's/capi-system/cattle-system/g' ${RANCHER_MANIFESTS_FOLDER}/*.yaml
+
+rm -f ${RANCHER_MANIFESTS_FOLDER}/customresourcedefinition-*.yaml
+
+rm -f issuer-capi-selfsigned-issuer.yaml
+rm -f certificate-capi-serving-cert.yaml
+rm -f namespace-capi-system.yaml
+yq -i '.metadata.annotations += {"need-a-cert.cattle.io/secret-name": "capi-webhook-service-cert"}' service-capi-webhook-service.yaml
+# Remove the tolerations so we can add and customize them
+yq -i 'del(.spec.template.spec.tolerations)' deployment-capi-controller-manager.yaml
+yq -i 'del(.spec.template.spec.containers[0].image)' deployment-capi-controller-manager.yaml
+# Remove the arguments so we can add and customize them
+yq -i 'del(.spec.template.spec.containers[0].args)' deployment-capi-controller-manager.yaml
+yq -i '.spec.template.spec.containers[0].image = "REPLACE-WITH-TEMPLATED-IMAGE"' deployment-capi-controller-manager.yaml
+yq -i '.spec.template.spec.containers[0].env += "REPLACE-WITH-EXTRA-ENV"' deployment-capi-controller-manager.yaml
+yq -i '.spec.template.spec.containers[0].args = "REPLACE-WITH-ARGS"' deployment-capi-controller-manager.yaml
+
+cat << EOF >> deployment-capi-controller-manager.yaml
+      nodeSelector: {{ include "linux-node-selector" . | nindent 8 }}
+      {{- if .Values.nodeSelector }}
+{{ toYaml .Values.nodeSelector | indent 8 }}
+      {{- end }}
+      tolerations: {{ include "linux-node-tolerations" . | nindent 6 }}
+      {{- if .Values.tolerations }}
+{{ toYaml .Values.tolerations | indent 6 }}
+      {{- else }}
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/controlplane
+        value: "true"
+      - effect: NoSchedule
+        key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+      - effect: NoSchedule
+        key: "node-role.kubernetes.io/master"
+        operator: "Exists"
+      - effect: "NoExecute"
+        key: "node-role.kubernetes.io/etcd"
+        operator: "Exists"
+      {{- end }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: "{{.Values.priorityClassName}}"
+      {{- end }}
+EOF
+
+sed -i 's/capi-system/"{{ .Release.Namespace }}"/g' *.yaml
+sed -i 's/REPLACE-WITH-TEMPLATED-IMAGE/'\''{{ template "system_default_registry" \. }}{{ \.Values\.image\.repository }}:{{ \.Values\.image\.tag }}'\''/g' deployment-capi-controller-manager.yaml
+sed -i 's/            - REPLACE-WITH-EXTRA-ENV/{{- if \.Values\.extraEnv }}\n{{ toYaml \.Values.extraEnv | indent 12 }}\n{{- end }}/g' deployment-capi-controller-manager.yaml
+sed -i 's/          args: REPLACE-WITH-ARGS/          args:\n            - --leader-elect\n{{ toYaml .Values.args | indent 12 }}/g' deployment-capi-controller-manager.yaml
+
+sed -i 's/IfNotPresent/"{{ .Values.image.imagePullPolicy }}"/g' deployment-capi-controller-manager.yaml
+
+sed -i -e '$a\' *.yaml
+
+popd

@@ -1,0 +1,18 @@
+FROM registry.suse.com/bci/golang:1.19-20.21
+
+ARG DAPPER_HOST_ARCH
+ENV ARCH $DAPPER_HOST_ARCH
+
+ENV YQ_VERSION v4.34.2
+
+RUN zypper -n install git docker vim less file curl wget
+RUN wget https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${ARCH}.tar.gz -O - | tar xz && mv yq_linux_${ARCH} /usr/bin/yq
+
+ENV DAPPER_ENV REPO TAG DRONE_TAG CROSS
+ENV DAPPER_SOURCE /go/src/github.com/rancher/provisioning/
+ENV DAPPER_OUTPUT ./charts ./dist
+ENV HOME ${DAPPER_SOURCE}
+WORKDIR ${DAPPER_SOURCE}
+
+ENTRYPOINT ["./scripts/entry"]
+CMD ["ci"]

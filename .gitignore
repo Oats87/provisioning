@@ -1,3 +1,9 @@
+/.dapper
+/.cache
+/bin
+/dist
+*.swp
 .idea
-*.DS_Store
-charts/capi/templates/for-rancher
+/provisioning
+.vscode/
+.DS_Store
