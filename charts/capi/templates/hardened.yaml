@@ -23,82 +23,11 @@ spec:
       nodeSelector: {{ include "linux-node-selector" . | nindent 8 }}
       tolerations: {{ include "linux-node-tolerations" . | nindent 8 }}
       containers:
-      - name: patch-sa-{{ .Release.Namespace }}
-        image: {{ template "system_default_registry" $ }}{{ $.Values.global.kubectl.repository }}:{{ $.Values.global.kubectl.tag }}
-        imagePullPolicy: {{ $.Values.global.kubectl.pullPolicy }}
-        command: ["kubectl", "patch", "serviceaccount", "default", "-p", "{\"automountServiceAccountToken\": false}"]
-        args: ["-n", "{{ .Release.Namespace }}"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: capi-patch-sa
-  labels:
-    app: capi-patch-sa
-rules:
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs: ['get', 'patch']
-  - apiGroups: ['policy']
-    resources: ['podsecuritypolicies']
-    verbs:     ['use']
-    resourceNames:
-      - capi}-patch-sa
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: capi-patch-sa
-  labels:
-    app: capi-patch-sa
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: capi-patch-sa
-subjects:
-  - kind: ServiceAccount
-    name: capi-patch-sa
-    namespace: {{ .Release.Namespace }}
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: capi-patch-sa
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: capi-patch-sa
----
-apiVersion: policy/v1beta1
-kind: PodSecurityPolicy
-metadata:
-  name: capi-patch-sa
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: capi-patch-sa
-spec:
-  privileged: false
-  hostNetwork: false
-  hostIPC: false
-  hostPID: false
-  runAsUser:
-    rule: 'MustRunAsNonRoot'
-  seLinux:
-    rule: 'RunAsAny'
-  supplementalGroups:
-    rule: 'MustRunAs'
-    ranges:
-      - min: 1
-        max: 65535
-  fsGroup:
-    rule: 'MustRunAs'
-    ranges:
-      - min: 1
-        max: 65535
-  readOnlyRootFilesystem: false
-  volumes:
-    - 'secret'
+        - name: patch-sa-{{ .Release.Namespace }}
+          image: {{ template "system_default_registry" $ }}{{ $.Values.global.kubectl.repository }}:{{ $.Values.global.kubectl.tag }}
+          imagePullPolicy: {{ $.Values.global.kubectl.pullPolicy }}
+          command: ["kubectl", "patch", "serviceaccount", "default", "-p", "{\"automountServiceAccountToken\": false}"]
+          args: ["-n", "{{ .Release.Namespace }}"]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

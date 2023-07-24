@@ -64,7 +64,7 @@ for i in $(ls ${RANCHER_MANIFESTS_FOLDER}/customresourcedefinition-*.yaml); do
   echo "---" >> ${RANCHER_MANIFESTS_FOLDER}/capi-crds.yaml
   cat $i | yq 'del(.metadata.annotations["cert-manager.io/inject-ca-from"])' | yq 'del(.spec.conversion.webhook.clientConfig.caBundle)' >> ${RANCHER_MANIFESTS_FOLDER}/capi-crds.yaml
 done
-sed -i 's/capi-system/cattle-system/g' ${RANCHER_MANIFESTS_FOLDER}/*.yaml
+sed -i 's/capi-system/cattle-provisioning-capi-system/g' ${RANCHER_MANIFESTS_FOLDER}/*.yaml
 
 rm -f ${RANCHER_MANIFESTS_FOLDER}/customresourcedefinition-*.yaml
 
