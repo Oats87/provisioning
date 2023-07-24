@@ -1,21 +1,21 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: capi-patch-sa
+  name: rancher-provisioning-capi-patch-sa
   namespace: {{ .Release.Namespace }}
   labels:
-    app: capi-patch-sa
+    app: rancher-provisioning-capi-patch-sa
   annotations:
     "helm.sh/hook": post-install, post-upgrade
     "helm.sh/hook-delete-policy": hook-succeeded, before-hook-creation
 spec:
   template:
     metadata:
-      name: capi-patch-sa
+      name: rancher-provisioning-capi-patch-sa
       labels:
-        app: capi-patch-sa
+        app: rancher-provisioning-capi-patch-sa
     spec:
-      serviceAccountName: capi-patch-sa
+      serviceAccountName: rancher-provisioning-capi-patch-sa
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -28,6 +28,43 @@ spec:
           imagePullPolicy: {{ $.Values.global.kubectl.pullPolicy }}
           command: ["kubectl", "patch", "serviceaccount", "default", "-p", "{\"automountServiceAccountToken\": false}"]
           args: ["-n", "{{ .Release.Namespace }}"]
+---
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rancher-provisioning-capi-patch-sa
+  labels:
+    app: rancher-provisioning-capi-patch-sa
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs: ['get', 'patch']
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rancher-provisioning-capi-patch-sa
+  labels:
+    app: rancher-provisioning-capi-patch-sa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rancher-provisioning-capi-patch-sa
+subjects:
+  - kind: ServiceAccount
+    name: rancher-provisioning-capi-patch-sa
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rancher-provisioning-capi-patch-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: rancher-provisioning-capi-patch-sa
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
